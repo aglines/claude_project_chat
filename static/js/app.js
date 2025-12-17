@@ -7,8 +7,11 @@ class ChatInterface {
     constructor() {
         this.sessionId = this.generateSessionId();
         this.uploadedFiles = [];
+        this.templateUploadedFiles = [];
         this.isLoading = false;
         this.config = window.APP_CONFIG || {};
+        this.activeTab = 'templates';
+        this.promptBuilder = null;
 
         this.init();
     }
@@ -19,6 +22,8 @@ class ChatInterface {
     init() {
         this.bindElements();
         this.bindEvents();
+        this.initPromptBuilder();
+        this.initTabs();
         this.updatePromptUI();
     }
 
@@ -27,6 +32,13 @@ class ChatInterface {
      */
     bindElements() {
         this.elements = {
+            // Tab elements
+            tabTemplates: document.getElementById('tabTemplates'),
+            tabSimple: document.getElementById('tabSimple'),
+            templateInputSection: document.getElementById('templateInputSection'),
+            simpleInputSection: document.getElementById('simpleInputSection'),
+
+            // Simple input elements
             promptSelect: document.getElementById('promptSelect'),
             messageInput: document.getElementById('messageInput'),
             fileInput: document.getElementById('fileInput'),
@@ -34,45 +46,137 @@ class ChatInterface {
             uploadedFiles: document.getElementById('uploadedFiles'),
             sendBtn: document.getElementById('sendBtn'),
             clearBtn: document.getElementById('clearBtn'),
+            fileUploadSection: document.getElementById('fileUploadSection'),
+
+            // Template input elements
+            templateFileInput: document.getElementById('templateFileInput'),
+            templateDropZone: document.getElementById('templateDropZone'),
+            templateUploadedFiles: document.getElementById('templateUploadedFiles'),
+
+            // Shared elements
             chatHistory: document.getElementById('chatHistory'),
             emptyState: document.getElementById('emptyState'),
-            loadingIndicator: document.getElementById('loadingIndicator'),
-            fileUploadSection: document.getElementById('fileUploadSection')
+            loadingIndicator: document.getElementById('loadingIndicator')
         };
+    }
+
+    /**
+     * Initialize prompt builder
+     */
+    initPromptBuilder() {
+        if (typeof PromptBuilder !== 'undefined') {
+            this.promptBuilder = new PromptBuilder({
+                containerId: 'promptBuilder',
+                onSubmit: (compiledPrompt, metadata) => {
+                    this.sendTemplateMessage(compiledPrompt, metadata);
+                }
+            });
+        }
+    }
+
+    /**
+     * Initialize tab functionality
+     */
+    initTabs() {
+        const tabs = [this.elements.tabTemplates, this.elements.tabSimple];
+
+        tabs.forEach(tab => {
+            if (tab) {
+                tab.addEventListener('click', () => {
+                    const tabName = tab.id === 'tabTemplates' ? 'templates' : 'simple';
+                    this.switchTab(tabName);
+                });
+            }
+        });
+    }
+
+    /**
+     * Switch between tabs
+     */
+    switchTab(tabName) {
+        this.activeTab = tabName;
+
+        // Update tab styles
+        const tabs = {
+            templates: this.elements.tabTemplates,
+            simple: this.elements.tabSimple
+        };
+
+        Object.entries(tabs).forEach(([name, tab]) => {
+            if (tab) {
+                if (name === tabName) {
+                    tab.classList.add('border-blue-600', 'text-blue-600');
+                    tab.classList.remove('border-transparent', 'text-gray-500');
+                } else {
+                    tab.classList.remove('border-blue-600', 'text-blue-600');
+                    tab.classList.add('border-transparent', 'text-gray-500');
+                }
+            }
+        });
+
+        // Show/hide sections
+        if (tabName === 'templates') {
+            this.elements.templateInputSection?.classList.remove('hidden');
+            this.elements.simpleInputSection?.classList.add('hidden');
+        } else {
+            this.elements.templateInputSection?.classList.add('hidden');
+            this.elements.simpleInputSection?.classList.remove('hidden');
+        }
     }
 
     /**
      * Bind event listeners
      */
     bindEvents() {
-        // Send button
-        this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
-
-        // Enter key to send (Ctrl+Enter or Cmd+Enter)
-        this.elements.messageInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                this.sendMessage();
-            }
-        });
-
-        // Clear button
-        this.elements.clearBtn.addEventListener('click', () => this.clearChat());
-
-        // Prompt selection change
-        this.elements.promptSelect.addEventListener('change', () => this.updatePromptUI());
-
-        // File upload
-        if (this.elements.fileInput) {
-            this.elements.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        // Send button (simple mode)
+        if (this.elements.sendBtn) {
+            this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
         }
 
-        // Drag and drop
+        // Enter key to send (Ctrl+Enter or Cmd+Enter)
+        if (this.elements.messageInput) {
+            this.elements.messageInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    this.sendMessage();
+                }
+            });
+        }
+
+        // Clear button
+        if (this.elements.clearBtn) {
+            this.elements.clearBtn.addEventListener('click', () => this.clearChat());
+        }
+
+        // Prompt selection change
+        if (this.elements.promptSelect) {
+            this.elements.promptSelect.addEventListener('change', () => this.updatePromptUI());
+        }
+
+        // Simple mode file upload
+        if (this.elements.fileInput) {
+            this.elements.fileInput.addEventListener('change', (e) => this.handleFileSelect(e, 'simple'));
+        }
+
+        // Simple mode drag and drop
         if (this.elements.dropZone) {
-            this.elements.dropZone.addEventListener('click', () => this.elements.fileInput.click());
-            this.elements.dropZone.addEventListener('dragover', (e) => this.handleDragOver(e));
-            this.elements.dropZone.addEventListener('dragleave', (e) => this.handleDragLeave(e));
-            this.elements.dropZone.addEventListener('drop', (e) => this.handleDrop(e));
+            this.elements.dropZone.addEventListener('click', () => this.elements.fileInput?.click());
+            this.elements.dropZone.addEventListener('dragover', (e) => this.handleDragOver(e, this.elements.dropZone));
+            this.elements.dropZone.addEventListener('dragleave', (e) => this.handleDragLeave(e, this.elements.dropZone));
+            this.elements.dropZone.addEventListener('drop', (e) => this.handleDrop(e, 'simple'));
+        }
+
+        // Template mode file upload
+        if (this.elements.templateFileInput) {
+            this.elements.templateFileInput.addEventListener('change', (e) => this.handleFileSelect(e, 'template'));
+        }
+
+        // Template mode drag and drop
+        if (this.elements.templateDropZone) {
+            this.elements.templateDropZone.addEventListener('click', () => this.elements.templateFileInput?.click());
+            this.elements.templateDropZone.addEventListener('dragover', (e) => this.handleDragOver(e, this.elements.templateDropZone));
+            this.elements.templateDropZone.addEventListener('dragleave', (e) => this.handleDragLeave(e, this.elements.templateDropZone));
+            this.elements.templateDropZone.addEventListener('drop', (e) => this.handleDrop(e, 'template'));
         }
     }
 
@@ -80,82 +184,80 @@ class ChatInterface {
      * Update UI based on selected prompt
      */
     updatePromptUI() {
+        if (!this.elements.promptSelect) return;
+
         const selected = this.elements.promptSelect.selectedOptions[0];
         if (!selected) return;
 
-        const requiresFiles = selected.dataset.requiresFiles === 'true';
-        const requiresUrl = selected.dataset.requiresUrl === 'true';
         const placeholder = selected.dataset.placeholder || 'Enter your message...';
 
         // Update placeholder
-        this.elements.messageInput.placeholder = placeholder;
-
-        // Show/hide file upload section based on prompt requirements
-        if (this.elements.fileUploadSection) {
-            if (requiresFiles) {
-                this.elements.fileUploadSection.classList.remove('hidden');
-            }
+        if (this.elements.messageInput) {
+            this.elements.messageInput.placeholder = placeholder;
         }
     }
 
     /**
      * Handle file selection
      */
-    handleFileSelect(event) {
+    handleFileSelect(event, mode = 'simple') {
         const files = Array.from(event.target.files);
-        this.processFiles(files);
+        this.processFiles(files, mode);
     }
 
     /**
      * Handle drag over
      */
-    handleDragOver(event) {
+    handleDragOver(event, dropZone) {
         event.preventDefault();
         event.stopPropagation();
-        this.elements.dropZone.classList.add('border-blue-500', 'bg-blue-50');
+        dropZone?.classList.add('border-blue-500', 'bg-blue-50');
     }
 
     /**
      * Handle drag leave
      */
-    handleDragLeave(event) {
+    handleDragLeave(event, dropZone) {
         event.preventDefault();
         event.stopPropagation();
-        this.elements.dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+        dropZone?.classList.remove('border-blue-500', 'bg-blue-50');
     }
 
     /**
      * Handle file drop
      */
-    handleDrop(event) {
+    handleDrop(event, mode = 'simple') {
         event.preventDefault();
         event.stopPropagation();
-        this.elements.dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+
+        const dropZone = mode === 'template' ? this.elements.templateDropZone : this.elements.dropZone;
+        dropZone?.classList.remove('border-blue-500', 'bg-blue-50');
 
         const files = Array.from(event.dataTransfer.files);
-        this.processFiles(files);
+        this.processFiles(files, mode);
     }
 
     /**
      * Process and upload files
      */
-    async processFiles(files) {
+    async processFiles(files, mode = 'simple') {
         const maxFiles = this.config.files?.max_files || 5;
+        const targetFiles = mode === 'template' ? this.templateUploadedFiles : this.uploadedFiles;
 
-        if (this.uploadedFiles.length + files.length > maxFiles) {
+        if (targetFiles.length + files.length > maxFiles) {
             this.showError(`Maximum ${maxFiles} files allowed`);
             return;
         }
 
         for (const file of files) {
-            await this.uploadFile(file);
+            await this.uploadFile(file, mode);
         }
     }
 
     /**
      * Upload a single file
      */
-    async uploadFile(file) {
+    async uploadFile(file, mode = 'simple') {
         const formData = new FormData();
         formData.append('file', file);
 
@@ -171,13 +273,19 @@ class ChatInterface {
                 throw new Error(data.error || 'Upload failed');
             }
 
-            this.uploadedFiles.push({
+            const fileInfo = {
                 filepath: data.filepath,
                 filename: data.filename,
                 size: data.size
-            });
+            };
 
-            this.renderUploadedFiles();
+            if (mode === 'template') {
+                this.templateUploadedFiles.push(fileInfo);
+                this.renderUploadedFiles('template');
+            } else {
+                this.uploadedFiles.push(fileInfo);
+                this.renderUploadedFiles('simple');
+            }
 
         } catch (error) {
             this.showError(`Failed to upload ${file.name}: ${error.message}`);
@@ -187,25 +295,30 @@ class ChatInterface {
     /**
      * Render uploaded files list
      */
-    renderUploadedFiles() {
-        if (this.uploadedFiles.length === 0) {
-            this.elements.uploadedFiles.classList.add('hidden');
+    renderUploadedFiles(mode = 'simple') {
+        const files = mode === 'template' ? this.templateUploadedFiles : this.uploadedFiles;
+        const container = mode === 'template' ? this.elements.templateUploadedFiles : this.elements.uploadedFiles;
+
+        if (!container) return;
+
+        if (files.length === 0) {
+            container.classList.add('hidden');
             return;
         }
 
-        this.elements.uploadedFiles.classList.remove('hidden');
-        this.elements.uploadedFiles.innerHTML = this.uploadedFiles.map((file, index) => `
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+        container.classList.remove('hidden');
+        container.innerHTML = files.map((file, index) => `
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg p-2">
                 <div class="flex items-center gap-2">
-                    <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <span class="text-sm text-gray-700">${file.filename}</span>
                     <span class="text-xs text-gray-400">(${this.formatFileSize(file.size)})</span>
                 </div>
-                <button onclick="chatInterface.removeFile(${index})"
+                <button onclick="chatInterface.removeFile(${index}, '${mode}')"
                         class="text-red-500 hover:text-red-700">
-                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
@@ -216,9 +329,14 @@ class ChatInterface {
     /**
      * Remove uploaded file
      */
-    removeFile(index) {
-        this.uploadedFiles.splice(index, 1);
-        this.renderUploadedFiles();
+    removeFile(index, mode = 'simple') {
+        if (mode === 'template') {
+            this.templateUploadedFiles.splice(index, 1);
+            this.renderUploadedFiles('template');
+        } else {
+            this.uploadedFiles.splice(index, 1);
+            this.renderUploadedFiles('simple');
+        }
     }
 
     /**
@@ -231,19 +349,75 @@ class ChatInterface {
     }
 
     /**
-     * Send message to Claude
+     * Send message from template mode
+     */
+    async sendTemplateMessage(compiledPrompt, metadata = {}) {
+        if (this.isLoading) return;
+
+        const files = this.templateUploadedFiles.map(f => f.filepath);
+
+        // Show loading state
+        this.setLoading(true);
+        this.hideEmptyState();
+
+        // Add user message to chat
+        this.addMessage('user', compiledPrompt, files, metadata.templateName);
+
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: compiledPrompt,
+                    files,
+                    session_id: this.sessionId
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to get response');
+            }
+
+            // Add assistant response to chat
+            this.addMessage('assistant', data.response);
+
+            // Clear template files
+            this.templateUploadedFiles = [];
+            this.renderUploadedFiles('template');
+
+            // Clear the prompt builder form
+            if (this.promptBuilder) {
+                this.promptBuilder.clearForm();
+            }
+
+        } catch (error) {
+            this.showError(`Error: ${error.message}`);
+            // Remove the user message if request failed
+            const lastMessage = this.elements.chatHistory.lastElementChild;
+            if (lastMessage && lastMessage.classList.contains('user-message')) {
+                lastMessage.remove();
+            }
+        } finally {
+            this.setLoading(false);
+        }
+    }
+
+    /**
+     * Send message from simple mode
      */
     async sendMessage() {
         if (this.isLoading) return;
 
-        const message = this.elements.messageInput.value.trim();
-        const promptId = this.elements.promptSelect.value;
+        const message = this.elements.messageInput?.value?.trim() || '';
+        const promptId = this.elements.promptSelect?.value;
         const files = this.uploadedFiles.map(f => f.filepath);
 
         // Validate input
-        const selected = this.elements.promptSelect.selectedOptions[0];
-        const requiresFiles = selected.dataset.requiresFiles === 'true';
-        const minFiles = parseInt(selected.dataset.minFiles) || 0;
+        const selected = this.elements.promptSelect?.selectedOptions[0];
+        const requiresFiles = selected?.dataset.requiresFiles === 'true';
+        const minFiles = parseInt(selected?.dataset.minFiles) || 0;
 
         if (!message && files.length === 0) {
             this.showError('Please enter a message or upload files');
@@ -284,9 +458,11 @@ class ChatInterface {
             this.addMessage('assistant', data.response);
 
             // Clear input
-            this.elements.messageInput.value = '';
+            if (this.elements.messageInput) {
+                this.elements.messageInput.value = '';
+            }
             this.uploadedFiles = [];
-            this.renderUploadedFiles();
+            this.renderUploadedFiles('simple');
 
         } catch (error) {
             this.showError(`Error: ${error.message}`);
@@ -303,7 +479,7 @@ class ChatInterface {
     /**
      * Add message to chat history
      */
-    addMessage(role, content, files = []) {
+    addMessage(role, content, files = [], templateName = null) {
         const isUser = role === 'user';
 
         const messageDiv = document.createElement('div');
@@ -321,6 +497,14 @@ class ChatInterface {
         roleLabel.className = `text-xs font-medium mb-1 ${isUser ? 'text-blue-200' : 'text-gray-500'}`;
         roleLabel.textContent = isUser ? 'You' : 'Claude';
         contentDiv.appendChild(roleLabel);
+
+        // Add template name for user messages if available
+        if (isUser && templateName) {
+            const templateDiv = document.createElement('div');
+            templateDiv.className = 'text-xs mb-2 opacity-75';
+            templateDiv.innerHTML = `<span class="bg-blue-500 px-1.5 py-0.5 rounded text-xs">${templateName}</span>`;
+            contentDiv.appendChild(templateDiv);
+        }
 
         // Add file indicators for user messages
         if (isUser && files.length > 0) {
@@ -405,10 +589,19 @@ class ChatInterface {
 
         // Clear files
         this.uploadedFiles = [];
-        this.renderUploadedFiles();
+        this.templateUploadedFiles = [];
+        this.renderUploadedFiles('simple');
+        this.renderUploadedFiles('template');
 
-        // Clear input
-        this.elements.messageInput.value = '';
+        // Clear inputs
+        if (this.elements.messageInput) {
+            this.elements.messageInput.value = '';
+        }
+
+        // Clear prompt builder
+        if (this.promptBuilder) {
+            this.promptBuilder.clearForm();
+        }
     }
 
     /**
@@ -416,12 +609,15 @@ class ChatInterface {
      */
     setLoading(loading) {
         this.isLoading = loading;
-        this.elements.sendBtn.disabled = loading;
+
+        if (this.elements.sendBtn) {
+            this.elements.sendBtn.disabled = loading;
+        }
 
         if (loading) {
-            this.elements.loadingIndicator.classList.remove('hidden');
+            this.elements.loadingIndicator?.classList.remove('hidden');
         } else {
-            this.elements.loadingIndicator.classList.add('hidden');
+            this.elements.loadingIndicator?.classList.add('hidden');
         }
     }
 
@@ -429,25 +625,23 @@ class ChatInterface {
      * Show empty state
      */
     showEmptyState() {
-        if (this.elements.emptyState) {
-            this.elements.emptyState.classList.remove('hidden');
-        }
+        this.elements.emptyState?.classList.remove('hidden');
     }
 
     /**
      * Hide empty state
      */
     hideEmptyState() {
-        if (this.elements.emptyState) {
-            this.elements.emptyState.classList.add('hidden');
-        }
+        this.elements.emptyState?.classList.add('hidden');
     }
 
     /**
      * Scroll chat to bottom
      */
     scrollToBottom() {
-        this.elements.chatHistory.scrollTop = this.elements.chatHistory.scrollHeight;
+        if (this.elements.chatHistory) {
+            this.elements.chatHistory.scrollTop = this.elements.chatHistory.scrollHeight;
+        }
     }
 
     /**
@@ -456,13 +650,14 @@ class ChatInterface {
     showError(message) {
         // Create error toast
         const toast = document.createElement('div');
-        toast.className = 'fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+        toast.className = 'fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in';
         toast.textContent = message;
         document.body.appendChild(toast);
 
         // Remove after 3 seconds
         setTimeout(() => {
-            toast.remove();
+            toast.classList.add('animate-fade-out');
+            setTimeout(() => toast.remove(), 300);
         }, 3000);
     }
 

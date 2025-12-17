@@ -13,6 +13,13 @@ from config import Config, ProjectConfig
 from utils.claude_client import ClaudeClient
 from utils.file_processor import FileProcessor
 from utils.url_fetcher import URLFetcher
+from utils.prompt_templates import get_default_templates, get_default_categories
+from utils.prompt_compiler import (
+    compile_prompt,
+    validate_template_values,
+    preview_compiled_prompt,
+    extract_variables
+)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -266,6 +273,115 @@ def get_config():
         'ui': project_config.get('ui', {}),
         'features': project_config.get('features', {}),
         'files': project_config.get('files', {})
+    })
+
+
+# =============================================================================
+# Template API Routes
+# =============================================================================
+
+@app.route('/api/templates', methods=['GET'])
+def get_templates():
+    """
+    Get all available prompt templates.
+
+    Response JSON:
+        templates: list - List of template objects
+        categories: list - List of category objects
+    """
+    return jsonify({
+        'templates': get_default_templates(),
+        'categories': get_default_categories()
+    })
+
+
+@app.route('/api/templates/categories', methods=['GET'])
+def get_categories():
+    """
+    Get all template categories.
+
+    Response JSON:
+        categories: list - List of category objects
+    """
+    return jsonify({
+        'categories': get_default_categories()
+    })
+
+
+@app.route('/api/templates/compile', methods=['POST'])
+@handle_errors
+def compile_template():
+    """
+    Compile a template with variable values.
+
+    Request JSON:
+        template: str - Template string with [variable] placeholders
+        values: dict - Variable name to value mapping
+
+    Response JSON:
+        compiled: str - Compiled prompt text
+        unfilled: list - List of unfilled variable names
+        hasUnfilled: bool - Whether any variables are unfilled
+        characterCount: int - Length of compiled prompt
+        estimatedTokens: int - Estimated token count
+    """
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    template = data.get('template', '')
+    values = data.get('values', {})
+
+    result = preview_compiled_prompt(template, values)
+    return jsonify(result)
+
+
+@app.route('/api/templates/validate', methods=['POST'])
+@handle_errors
+def validate_template():
+    """
+    Validate variable values against template requirements.
+
+    Request JSON:
+        template: dict - Template definition object
+        values: dict - Variable name to value mapping
+
+    Response JSON:
+        isValid: bool - Whether all values are valid
+        errors: dict - Field name to error message mapping
+    """
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    template_def = data.get('template', {})
+    values = data.get('values', {})
+
+    result = validate_template_values(template_def, values)
+    return jsonify(result.to_dict())
+
+
+@app.route('/api/templates/extract-variables', methods=['POST'])
+@handle_errors
+def extract_template_variables():
+    """
+    Extract variable names from a template string.
+
+    Request JSON:
+        template: str - Template string
+
+    Response JSON:
+        variables: list - List of variable names found
+    """
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    template = data.get('template', '')
+    variables = extract_variables(template)
+
+    return jsonify({
+        'variables': variables
     })
 
 
