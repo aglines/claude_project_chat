@@ -249,16 +249,36 @@
 
                 <!-- Modal Body -->
                 <div class="p-4 overflow-y-auto max-h-[60vh]">
-                    <!-- Connection Status -->
-                    <div id="connectionStatus" class="mb-4 p-3 rounded-lg bg-gray-50 border border-gray-200">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <span class="text-sm font-medium text-gray-700">Connection:</span>
-                                <span id="connectionMode" class="ml-2 text-sm">Checking...</span>
+                    <!-- Connection Section -->
+                    <div id="connectionSection" class="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-sm font-medium text-gray-700">Connection</h4>
+                            <div class="flex items-center gap-2">
+                                <span id="connectionMode" class="text-sm">Checking...</span>
+                                <button id="refreshConnectionBtn" class="text-xs text-blue-600 hover:text-blue-800">
+                                    Refresh
+                                </button>
                             </div>
-                            <button id="refreshConnectionBtn" class="text-xs text-blue-600 hover:text-blue-800">
-                                Refresh
-                            </button>
+                        </div>
+
+                        <!-- Mode Selector (shown when both API and Cookie are available) -->
+                        <div id="modeSelectorSection" class="hidden">
+                            <p class="text-xs text-gray-500 mb-2">
+                                Select connection type:
+                            </p>
+                            <div class="flex gap-2">
+                                <button id="modeWebBtn"
+                                        class="flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-colors">
+                                    <div class="font-medium">Projects</div>
+                                    <div class="text-xs opacity-75">Claude.ai + Knowledge Bases</div>
+                                </button>
+                                <button id="modeApiBtn"
+                                        class="flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-colors">
+                                    <div class="font-medium">API</div>
+                                    <div class="text-xs opacity-75">Direct Anthropic API</div>
+                                </button>
+                            </div>
+                            <div id="modeSwitchStatus" class="mt-2 text-xs text-center hidden"></div>
                         </div>
                     </div>
 

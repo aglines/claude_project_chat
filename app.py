@@ -43,30 +43,53 @@ url_fetcher = URLFetcher()
 # Initialize Claude client (lazy - will fail gracefully if no API key/cookie)
 claude_client = None
 use_web_client = False
+preferred_mode = None  # None = auto, 'web' = force web, 'api' = force API
 
 # In-memory conversation storage
 conversations = {}
 
 
-def get_claude_client():
-    """Get or create Claude client (web client preferred if cookie available)."""
-    global claude_client, use_web_client
+def get_claude_client(force_reinit=False):
+    """Get or create Claude client based on preferred mode."""
+    global claude_client, use_web_client, preferred_mode
 
-    if claude_client is None:
-        # Try web client first (for Claude Projects access)
-        web_client = get_claude_web_client()
-        if web_client:
-            claude_client = web_client
-            use_web_client = True
-            app.logger.info("Using Claude Web Client (claude.ai direct access)")
-        else:
-            # Fall back to official API
+    if claude_client is None or force_reinit:
+        claude_client = None  # Reset for reinit
+
+        if preferred_mode == 'api':
+            # Force API mode
             Config.validate()
             claude_client = ClaudeClient(
                 api_key=Config.ANTHROPIC_API_KEY,
                 project_id=Config.CLAUDE_PROJECT_ID
             )
-            app.logger.info("Using official Anthropic API")
+            use_web_client = False
+            app.logger.info("Using official Anthropic API (user selected)")
+        elif preferred_mode == 'web':
+            # Force web mode
+            web_client = get_claude_web_client()
+            if web_client:
+                claude_client = web_client
+                use_web_client = True
+                app.logger.info("Using Claude Web Client (user selected)")
+            else:
+                raise ValueError("Web client not available - check your cookie")
+        else:
+            # Auto mode: Try web client first (for Claude Projects access)
+            web_client = get_claude_web_client()
+            if web_client:
+                claude_client = web_client
+                use_web_client = True
+                app.logger.info("Using Claude Web Client (claude.ai direct access)")
+            else:
+                # Fall back to official API
+                Config.validate()
+                claude_client = ClaudeClient(
+                    api_key=Config.ANTHROPIC_API_KEY,
+                    project_id=Config.CLAUDE_PROJECT_ID
+                )
+                use_web_client = False
+                app.logger.info("Using official Anthropic API")
 
     return claude_client
 
@@ -315,7 +338,15 @@ def get_client_status():
     Response JSON:
         mode: str - 'web' or 'api'
         connected: bool - Whether client is initialized
+        has_api_key: bool - Whether API key is configured
+        has_cookie: bool - Whether cookie is configured
+        can_switch: bool - Whether user can switch between modes
     """
+    # Check what credentials are available
+    has_api_key = bool(Config.ANTHROPIC_API_KEY)
+    cookie = os.environ.get('CLAUDE_COOKIE', '')
+    has_cookie = bool(cookie and 'sessionKey=' in cookie)
+
     # Initialize client if not already done
     try:
         get_claude_client()
@@ -323,12 +354,62 @@ def get_client_status():
         return jsonify({
             'mode': 'error',
             'connected': False,
-            'error': str(e)
+            'error': str(e),
+            'has_api_key': has_api_key,
+            'has_cookie': has_cookie,
+            'can_switch': has_api_key and has_cookie
         })
 
     return jsonify({
         'mode': 'web' if use_web_client else 'api',
-        'connected': claude_client is not None
+        'connected': claude_client is not None,
+        'has_api_key': has_api_key,
+        'has_cookie': has_cookie,
+        'can_switch': has_api_key and has_cookie
+    })
+
+
+@app.route('/api/switch-mode', methods=['POST'])
+@handle_errors
+def switch_mode():
+    """
+    Switch between API and Web client modes.
+
+    Request JSON:
+        mode: str - 'web' or 'api'
+
+    Response JSON:
+        success: bool
+        mode: str - New active mode
+    """
+    global preferred_mode, claude_client
+
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    new_mode = data.get('mode')
+    if new_mode not in ('web', 'api'):
+        return jsonify({'error': 'Mode must be "web" or "api"'}), 400
+
+    # Check if the requested mode is available
+    if new_mode == 'api' and not Config.ANTHROPIC_API_KEY:
+        return jsonify({'error': 'API key not configured'}), 400
+
+    cookie = os.environ.get('CLAUDE_COOKIE', '')
+    if new_mode == 'web' and not (cookie and 'sessionKey=' in cookie):
+        return jsonify({'error': 'Cookie not configured'}), 400
+
+    # Set preferred mode and reinitialize client
+    preferred_mode = new_mode
+    try:
+        get_claude_client(force_reinit=True)
+    except Exception as e:
+        return jsonify({'error': f'Failed to switch mode: {str(e)}'}), 500
+
+    return jsonify({
+        'success': True,
+        'mode': 'web' if use_web_client else 'api'
     })
 
 

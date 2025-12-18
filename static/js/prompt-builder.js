@@ -1840,6 +1840,7 @@ class TemplateSettings {
 
             // Store connection mode globally
             window.connectionMode = data.mode;
+            window.canSwitchMode = data.can_switch;
 
             if (data.mode === 'web' && data.connected) {
                 statusEl.textContent = 'Connected (Web Client)';
@@ -1856,9 +1857,93 @@ class TemplateSettings {
                 statusEl.textContent = 'Not connected';
                 statusEl.className = 'ml-2 text-sm text-red-600';
             }
+
+            // Show mode selector if both modes are available
+            this.updateModeSelector(data);
         } catch (e) {
             statusEl.textContent = 'Failed to check status';
             statusEl.className = 'ml-2 text-sm text-red-600';
+        }
+    }
+
+    /**
+     * Update the mode selector UI
+     */
+    updateModeSelector(data) {
+        const modeSelectorSection = document.getElementById('modeSelectorSection');
+        const modeWebBtn = document.getElementById('modeWebBtn');
+        const modeApiBtn = document.getElementById('modeApiBtn');
+
+        if (!modeSelectorSection) return;
+
+        if (data.can_switch) {
+            modeSelectorSection.classList.remove('hidden');
+
+            // Update button styles based on current mode
+            const activeClass = 'border-indigo-600 bg-indigo-100 text-indigo-800';
+            const inactiveClass = 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50';
+
+            if (data.mode === 'web') {
+                modeWebBtn.className = `flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-colors ${activeClass}`;
+                modeApiBtn.className = `flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-colors ${inactiveClass}`;
+            } else {
+                modeApiBtn.className = `flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-colors ${activeClass}`;
+                modeWebBtn.className = `flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-colors ${inactiveClass}`;
+            }
+
+            // Bind click handlers
+            modeWebBtn.onclick = () => this.switchMode('web');
+            modeApiBtn.onclick = () => this.switchMode('api');
+        } else {
+            modeSelectorSection.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Switch between API and Web modes
+     */
+    async switchMode(mode) {
+        const statusEl = document.getElementById('modeSwitchStatus');
+
+        if (statusEl) {
+            statusEl.textContent = 'Switching...';
+            statusEl.className = 'mt-2 text-xs text-center text-indigo-600';
+            statusEl.classList.remove('hidden');
+        }
+
+        try {
+            const response = await fetch('/api/switch-mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                if (statusEl) {
+                    statusEl.textContent = `Switched to ${mode === 'web' ? 'Projects' : 'API'} mode`;
+                    statusEl.className = 'mt-2 text-xs text-center text-green-600';
+                }
+
+                // Refresh connection status and UI
+                await this.checkConnectionStatus();
+
+                // Hide status after a moment
+                setTimeout(() => {
+                    if (statusEl) statusEl.classList.add('hidden');
+                }, 2000);
+            } else {
+                if (statusEl) {
+                    statusEl.textContent = data.error || 'Failed to switch mode';
+                    statusEl.className = 'mt-2 text-xs text-center text-red-600';
+                }
+            }
+        } catch (e) {
+            if (statusEl) {
+                statusEl.textContent = 'Failed to switch mode';
+                statusEl.className = 'mt-2 text-xs text-center text-red-600';
+            }
         }
     }
 
@@ -1892,6 +1977,9 @@ class TemplateSettings {
                 headerTitle.textContent = 'Prompt Engineering Workbench | Claude Projects';
             }
             document.title = 'Prompt Engineering Workbench | Claude Projects';
+
+            // Show project selector (it may still be hidden if no projects enabled)
+            // The project manager will handle showing it when projects are enabled
         }
     }
 
