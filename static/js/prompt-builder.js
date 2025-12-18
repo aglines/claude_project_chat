@@ -2122,6 +2122,26 @@ class TemplateSettings {
         document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
             this.saveSettings();
         });
+
+        // Template Management
+        document.getElementById('exportTemplatesBtn')?.addEventListener('click', () => {
+            this.exportTemplates();
+        });
+
+        document.getElementById('importTemplatesBtn')?.addEventListener('click', () => {
+            document.getElementById('importTemplatesFile')?.click();
+        });
+
+        document.getElementById('importTemplatesFile')?.addEventListener('change', (e) => {
+            if (e.target.files?.length) {
+                this.importTemplates(e.target.files[0]);
+                e.target.value = ''; // Reset for future imports
+            }
+        });
+
+        document.getElementById('backupTemplatesBtn')?.addEventListener('click', () => {
+            this.backupTemplates();
+        });
     }
 
     openSettings() {
@@ -2185,22 +2205,32 @@ class TemplateSettings {
                     </div>
                     <div class="divide-y divide-gray-100">
                         ${catData.templates.map(t => `
-                            <label class="flex items-center justify-between px-4 py-3 hover:bg-gray-50 cursor-pointer">
-                                <div class="flex-1">
+                            <div class="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+                                <label class="flex-1 cursor-pointer">
                                     <div class="flex items-center gap-2">
                                         <span class="font-medium text-gray-700">${t.name}</span>
                                         ${t.isCustom ? '<span class="text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">Custom</span>' : ''}
                                         ${t.isFavorite ? '<span class="text-yellow-500">★</span>' : ''}
                                     </div>
                                     <p class="text-sm text-gray-500 truncate">${t.description}</p>
-                                </div>
-                                <div class="ml-4">
+                                </label>
+                                <div class="ml-4 flex items-center gap-2">
+                                    ${t.isCustom ? `
+                                        <button type="button"
+                                                class="change-category-btn p-1 text-gray-400 hover:text-purple-600 transition-colors"
+                                                data-template-id="${t.id}"
+                                                title="Change Category">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+                                            </svg>
+                                        </button>
+                                    ` : ''}
                                     <input type="checkbox"
                                            class="template-toggle w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                            data-template-id="${t.id}"
                                            ${this.pendingChanges[t.id] ? 'checked' : ''}>
                                 </div>
-                            </label>
+                            </div>
                         `).join('')}
                     </div>
                 </div>
@@ -2237,6 +2267,88 @@ class TemplateSettings {
                 this.renderSettingsList();
             });
         });
+
+        // Bind change category buttons
+        container.querySelectorAll('.change-category-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const templateId = e.currentTarget.dataset.templateId;
+                this.showChangeCategoryModal(templateId);
+            });
+        });
+    }
+
+    /**
+     * Show modal to change template category
+     */
+    showChangeCategoryModal(templateId) {
+        const template = this.promptBuilder.templates.find(t => t.id === templateId);
+        if (!template || !template.isCustom) return;
+
+        const categories = this.promptBuilder.categories;
+        const currentCategory = template.category || 'custom';
+
+        const modalHtml = `
+            <div id="changeCategoryModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
+                <div class="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-medium text-gray-900">Change Category</h3>
+                    </div>
+                    <div class="px-6 py-4">
+                        <p class="text-sm text-gray-600 mb-3">
+                            Move <strong>${template.name}</strong> to:
+                        </p>
+                        <select id="newCategorySelect" class="w-full border border-gray-300 rounded-lg p-2 bg-white">
+                            ${categories.map(c => `
+                                <option value="${c.id}" ${c.id === currentCategory ? 'selected' : ''}>${c.name}</option>
+                            `).join('')}
+                        </select>
+                    </div>
+                    <div class="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+                        <button id="cancelCategoryBtn" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                            Cancel
+                        </button>
+                        <button id="saveCategoryBtn" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                            Save
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        const modal = document.getElementById('changeCategoryModal');
+        const cancelBtn = document.getElementById('cancelCategoryBtn');
+        const saveBtn = document.getElementById('saveCategoryBtn');
+
+        cancelBtn.addEventListener('click', () => modal.remove());
+
+        saveBtn.addEventListener('click', () => {
+            const newCategory = document.getElementById('newCategorySelect').value;
+            this.updateTemplateCategory(templateId, newCategory);
+            modal.remove();
+        });
+    }
+
+    /**
+     * Update template category in storage
+     */
+    updateTemplateCategory(templateId, newCategory) {
+        const customTemplates = this.storage.getCustomTemplates();
+        const templateIndex = customTemplates.findIndex(t => t.id === templateId);
+
+        if (templateIndex >= 0) {
+            customTemplates[templateIndex].category = newCategory;
+            customTemplates[templateIndex].updatedAt = new Date().toISOString();
+            localStorage.setItem(this.storage.STORAGE_KEY, JSON.stringify(customTemplates));
+
+            // Reload templates and re-render
+            this.promptBuilder.loadTemplates();
+            this.renderSettingsList();
+
+            this.showTemplateManagementStatus('Category updated', 'success');
+        }
     }
 
     setAllTemplates(enabled) {
@@ -2271,6 +2383,229 @@ class TemplateSettings {
 
         // Close modal
         this.closeSettings();
+    }
+
+    // =========================================================================
+    // Template Management (Export/Import/Backup)
+    // =========================================================================
+
+    showTemplateManagementStatus(message, type) {
+        const statusEl = document.getElementById('templateManagementStatus');
+        if (!statusEl) return;
+
+        statusEl.textContent = message;
+        statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600', 'text-amber-600');
+
+        switch (type) {
+            case 'success':
+                statusEl.classList.add('text-green-600');
+                break;
+            case 'error':
+                statusEl.classList.add('text-red-600');
+                break;
+            default:
+                statusEl.classList.add('text-amber-600');
+        }
+
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            statusEl.classList.add('hidden');
+        }, 5000);
+    }
+
+    /**
+     * Export custom templates as JSON download
+     */
+    exportTemplates() {
+        const customTemplates = this.storage.getCustomTemplates();
+
+        if (customTemplates.length === 0) {
+            this.showTemplateManagementStatus('No custom templates to export', 'error');
+            return;
+        }
+
+        const exportData = {
+            version: '1.0',
+            exportedAt: new Date().toISOString(),
+            templates: customTemplates
+        };
+
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `claude_templates_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        this.showTemplateManagementStatus(`Exported ${customTemplates.length} template(s)`, 'success');
+    }
+
+    /**
+     * Import templates from JSON file
+     */
+    async importTemplates(file) {
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+
+            if (!data.templates || !Array.isArray(data.templates)) {
+                throw new Error('Invalid template file format');
+            }
+
+            // Show category selection modal
+            this.showImportCategoryModal(data.templates);
+        } catch (e) {
+            this.showTemplateManagementStatus(`Import failed: ${e.message}`, 'error');
+        }
+    }
+
+    /**
+     * Show modal for selecting category during import
+     */
+    showImportCategoryModal(templates) {
+        const categories = this.promptBuilder.categories;
+
+        const modalHtml = `
+            <div id="importCategoryModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
+                <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-lg font-medium text-gray-900">Import Templates</h3>
+                    </div>
+                    <div class="px-6 py-4">
+                        <p class="text-sm text-gray-600 mb-4">
+                            Found <strong>${templates.length}</strong> template(s) to import.
+                        </p>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                Assign to Category
+                            </label>
+                            <select id="importCategorySelect" class="w-full border border-gray-300 rounded-lg p-2 bg-white">
+                                <option value="">Keep original categories</option>
+                                ${categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label class="flex items-center gap-2 text-sm text-gray-700">
+                                <input type="checkbox" id="importOverwrite" class="rounded border-gray-300">
+                                Overwrite existing templates with same ID
+                            </label>
+                        </div>
+                    </div>
+                    <div class="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+                        <button id="cancelImportBtn" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                            Cancel
+                        </button>
+                        <button id="confirmImportBtn" class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600">
+                            Import
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        const modal = document.getElementById('importCategoryModal');
+        const cancelBtn = document.getElementById('cancelImportBtn');
+        const confirmBtn = document.getElementById('confirmImportBtn');
+
+        cancelBtn.addEventListener('click', () => modal.remove());
+
+        confirmBtn.addEventListener('click', () => {
+            const categorySelect = document.getElementById('importCategorySelect');
+            const overwrite = document.getElementById('importOverwrite').checked;
+            const targetCategory = categorySelect.value;
+
+            this.performImport(templates, targetCategory, overwrite);
+            modal.remove();
+        });
+    }
+
+    /**
+     * Perform the actual import
+     */
+    performImport(templates, targetCategory, overwrite) {
+        let imported = 0;
+        let skipped = 0;
+        const existingTemplates = this.storage.getCustomTemplates();
+
+        templates.forEach(template => {
+            // Check if template already exists
+            const existingIndex = existingTemplates.findIndex(t => t.id === template.id);
+
+            if (existingIndex >= 0 && !overwrite) {
+                skipped++;
+                return;
+            }
+
+            // Apply target category if specified
+            if (targetCategory) {
+                template.category = targetCategory;
+            }
+
+            // Ensure required fields
+            template.isCustom = true;
+            template.importedAt = new Date().toISOString();
+
+            // Generate new ID if not overwriting and ID exists
+            if (existingIndex >= 0 && overwrite) {
+                template.updatedAt = new Date().toISOString();
+            } else if (existingIndex >= 0) {
+                template.id = `${template.id}_imported_${Date.now()}`;
+            }
+
+            this.storage.saveTemplate(template);
+            imported++;
+        });
+
+        // Reload templates in prompt builder
+        this.promptBuilder.loadTemplates();
+        this.renderSettingsList();
+
+        const message = skipped > 0
+            ? `Imported ${imported} template(s), skipped ${skipped}`
+            : `Imported ${imported} template(s)`;
+        this.showTemplateManagementStatus(message, 'success');
+    }
+
+    /**
+     * Backup all templates (custom + built-in) to server
+     */
+    async backupTemplates() {
+        try {
+            const allTemplates = this.promptBuilder.templates;
+            const customTemplates = this.storage.getCustomTemplates();
+
+            const backupData = {
+                version: '1.0',
+                backupAt: new Date().toISOString(),
+                allTemplates: allTemplates,
+                customTemplates: customTemplates,
+                settings: {
+                    favorites: this.storage.getFavorites(),
+                    enabled: this.storage.getEnabledTemplates()
+                }
+            };
+
+            const response = await fetch('/api/templates/backup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(backupData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showTemplateManagementStatus(`Backup saved: ${result.filename}`, 'success');
+            } else {
+                throw new Error(result.error || 'Backup failed');
+            }
+        } catch (e) {
+            this.showTemplateManagementStatus(`Backup failed: ${e.message}`, 'error');
+        }
     }
 }
 

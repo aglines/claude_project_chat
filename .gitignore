@@ -29,6 +29,9 @@ wheels/
 static/uploads/*
 !static/uploads/.gitkeep
 
+# Template backups
+backups/
+
 # IDE
 .idea/
 .vscode/

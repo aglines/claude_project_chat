@@ -6,6 +6,7 @@ Main application entry point.
 
 import os
 import uuid
+from datetime import datetime
 from functools import wraps
 
 # Load environment variables FIRST (before any imports that use them)
@@ -773,6 +774,48 @@ def extract_template_variables():
 
     return jsonify({
         'variables': variables
+    })
+
+
+@app.route('/api/templates/backup', methods=['POST'])
+@handle_errors
+def backup_templates():
+    """
+    Backup all templates to server filesystem.
+
+    Request JSON:
+        version: str - Backup format version
+        backupAt: str - ISO timestamp
+        allTemplates: list - All templates (built-in + custom)
+        customTemplates: list - Custom templates only
+        settings: dict - User settings (favorites, enabled states)
+
+    Response JSON:
+        success: bool
+        filename: str - Backup filename
+    """
+    data = request.json
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    # Create backups directory if it doesn't exist
+    backups_dir = os.path.join(os.path.dirname(__file__), 'backups')
+    os.makedirs(backups_dir, exist_ok=True)
+
+    # Generate timestamped filename
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'templates_backup_{timestamp}.json'
+    filepath = os.path.join(backups_dir, filename)
+
+    # Write backup file
+    with open(filepath, 'w') as f:
+        import json
+        json.dump(data, f, indent=2)
+
+    return jsonify({
+        'success': True,
+        'filename': filename,
+        'path': filepath
     })
 
 
