@@ -1,6 +1,6 @@
 # CLAUDE.md - Claude Project Chat Interface
 
-**Claude Project Chat Interface** is a generalized local web application that provides an intuitive chat interface for interacting with ANY Claude Project via the Anthropic API.
+**Claude Project Chat Interface** is a generalized local web application that provides an intuitive chat interface for interacting with ANY Claude Project. Supports both the official Anthropic API and direct Claude.ai web access with cookie authentication.
 
 ---
 
@@ -10,7 +10,9 @@
 
 - **Backend:** Python 3.11+, Flask 3.0
 - **Frontend:** HTML5, Tailwind CSS 3.4, Vanilla JavaScript
-- **AI Integration:** Anthropic Claude API (Python SDK 0.18+)
+- **AI Integration:**
+  - Anthropic Claude API (Python SDK 0.18+) - Official API
+  - Claude.ai Web Client (curl_cffi) - Direct web access with cookie auth
 - **File Processing:** PyPDF2, python-docx, beautifulsoup4
 - **Environment:** python-dotenv for configuration
 - **Storage:** Local filesystem (no database required)
@@ -20,52 +22,63 @@
 ```
 claude_project_chat/
 ├── app.py                 # Flask server with API routes
-├── config.py              # Project configuration (EDIT THIS FOR YOUR PROJECT)
+├── config.py              # Project configuration
 ├── project_config.yaml    # Project-specific settings (prompts, file types, etc)
+├── custom_prompts.yaml    # User's custom templates (gitignored)
 ├── requirements.txt       # Python dependencies
-├── .env                   # Environment variables (API keys)
+├── .env                   # Environment variables (API keys/cookies)
 ├── .gitignore            # Git ignore patterns
 ├── README.md             # Setup and usage instructions
 ├── static/
 │   ├── css/
-│   │   └── styles.css    # Custom styles (optional)
+│   │   └── styles.css    # Custom styles
 │   ├── js/
-│   │   └── app.js        # Frontend logic and API client
+│   │   ├── app.js        # Frontend logic and API client
+│   │   └── prompt-builder.js  # Template UI + Project Manager
 │   └── uploads/          # Temporary file storage (auto-created)
 ├── templates/
 │   └── index.html        # Main chat interface
 └── utils/
     ├── __init__.py       # Package initialization
-    ├── claude_client.py  # Anthropic API wrapper (generic)
+    ├── claude_client.py  # Official Anthropic API wrapper
+    ├── claude_web_client.py  # Claude.ai direct web client (cookie auth)
+    ├── tool_handler.py   # Tool execution handler for web client
     ├── file_processor.py # File upload and content extraction
     ├── url_fetcher.py    # URL content retrieval
+    ├── prompt_templates.py   # 20+ built-in templates
+    ├── prompt_compiler.py    # Template variable compilation
     └── config_loader.py  # Project configuration loader
 ```
 
 ### Current Status
 
 **Implemented:**
-- Generic Flask server that works with any Claude Project
+- **Dual Connection Modes:**
+  - Claude.ai Web Client (cookie auth) - Access Projects with knowledge bases
+  - Official Anthropic API - Standard Claude access
+- **Project Selector** - Switch between Claude Projects on the fly
+- **New Chat Button** - Start fresh conversations within projects
+- **Settings Modal** - Manage projects, templates, connection settings
+- **20+ Built-in Templates** - Analysis, research, content, technical
 - Configuration-driven project setup (YAML-based)
 - File upload handling (PDF, DOCX, TXT, MD, configurable)
-- Claude Project integration via Anthropic SDK
-- Customizable prompt dropdown system
 - Chat history with conversation threading
 - URL content fetching (optional)
+- URL sanitization (strips markdown formatting)
 
 **Configurable Per Project:**
 - Project name and description
-- Custom prompt templates
+- Custom prompt templates with variables
 - File type requirements
-- UI branding (title, colors, logo)
+- UI branding (title, colors)
 - Feature flags (URL fetching, file upload, etc)
 
 **Pending:**
 - Session persistence (SQLite database)
 - Export functionality (PDF/CSV reports)
 - Batch analysis processing
-- Multiple project profiles (switch between projects)
 - Analysis history dashboard
+- Full tool execution loop for web client
 
 ---
 
@@ -233,14 +246,18 @@ touch .env
 Add to `.env`:
 
 ```env
-# Required - Anthropic API Access
-ANTHROPIC_API_KEY=sk-ant-api03-xxx
+# ==== OPTION 1: Claude.ai Web Client (Recommended for Projects) ====
+# Get this from your browser's DevTools (Network tab -> Cookie header)
+CLAUDE_COOKIE=sessionKey=sk-ant-sid01-xxx...
 
-# Required - Your Claude Project UUID
-# Get this from your project URL: https://claude.ai/project/{UUID}
+# Optional: Start in a specific conversation
+CLAUDE_CONVERSATION_ID=your-conversation-uuid
+
+# ==== OPTION 2: Official Anthropic API ====
+ANTHROPIC_API_KEY=sk-ant-api03-xxx
 CLAUDE_PROJECT_ID=your-project-uuid-here
 
-# Optional - Server Configuration
+# ==== Server Configuration (Optional) ====
 FLASK_ENV=development
 FLASK_DEBUG=True
 HOST=127.0.0.1
@@ -250,12 +267,20 @@ PORT=5000
 MAX_FILE_SIZE=10485760  # 10MB in bytes
 ```
 
-**Getting Your Claude Project UUID:**
+**Getting Your Claude Cookie (for Web Client):**
+1. Open [claude.ai](https://claude.ai) and log in
+2. Open DevTools (F12 or Cmd+Option+I)
+3. Go to Network tab
+4. Click any request to claude.ai
+5. Find the `Cookie` header in Request Headers
+6. Copy the entire cookie string (starts with `sessionKey=`)
+
+**Getting Your Claude Project UUID (for API):**
 1. Open ANY Claude Project in Claude.ai
 2. Look at the URL: `https://claude.ai/project/{PROJECT_UUID}`
 3. Copy the UUID and add to `.env`
 
-**The interface will work with ANY Claude Project** - just change the `CLAUDE_PROJECT_ID` and update `project_config.yaml` for project-specific prompts.
+**The interface will work with ANY Claude Project** - the web client gives you access to all your projects through the Settings modal.
 
 ---
 
@@ -817,14 +842,18 @@ response = requests.get(url, headers=headers)
 | File | Purpose | Customization |
 |------|---------|---------------|
 | `project_config.yaml` | **EDIT THIS** - Project-specific settings | Prompts, file types, UI, features |
-| `.env` | **EDIT THIS** - API keys and project UUID | Your credentials |
+| `custom_prompts.yaml` | **CREATE THIS** - Your custom templates | Personal templates (gitignored) |
+| `.env` | **EDIT THIS** - API keys/cookies | Your credentials |
 | `app.py` | Flask server, route definitions | Usually no changes needed |
 | `config.py` | Environment loading | Usually no changes needed |
-| `utils/claude_client.py` | Generic Claude API wrapper | Works with any project |
+| `utils/claude_client.py` | Official Anthropic API wrapper | Works with any project |
+| `utils/claude_web_client.py` | Claude.ai direct web client | Cookie-based auth for Projects |
+| `utils/tool_handler.py` | Tool execution handler | For web client tool calls |
 | `utils/file_processor.py` | File content extraction | Add custom file types here |
-| `utils/url_fetcher.py` | Web content retrieval | Add custom URL handling |
-| `utils/config_loader.py` | YAML configuration parser | Usually no changes needed |
-| `static/js/app.js` | Frontend chat logic | Customize UI behavior |
+| `utils/prompt_templates.py` | 20+ built-in templates | Add default templates here |
+| `utils/prompt_compiler.py` | Template variable handling | URL sanitization, compilation |
+| `static/js/app.js` | Frontend chat logic | ChatInterface, TemplateSettings |
+| `static/js/prompt-builder.js` | Template UI + Project Manager | PromptBuilder, ProjectManager |
 | `templates/index.html` | Main UI template | Customize branding/layout |
 
 ---
@@ -942,7 +971,33 @@ Monitor usage in Anthropic Console: https://console.anthropic.com/
 
 ---
 
-**Project Status:** Development  
-**Primary Use:** Local MacBook - works with ANY Claude Project  
-**Tech Stack:** Python Flask + Anthropic Claude  
+## Credits & Acknowledgments
+
+### Libraries Used
+
+- **[Flask](https://flask.palletsprojects.com/)** - Web framework
+- **[Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python)** - Official Claude API
+- **[curl_cffi](https://github.com/yifeikong/curl_cffi)** - HTTP client with browser impersonation
+- **[BeautifulSoup4](https://www.crummy.com/software/BeautifulSoup/)** - HTML parsing
+- **[PyPDF2](https://github.com/py-pdf/pypdf)** - PDF text extraction
+- **[python-docx](https://github.com/python-openxml/python-docx)** - Word document processing
+- **[Tailwind CSS](https://tailwindcss.com/)** - Utility-first CSS framework
+
+### Inspiration
+
+- **[Claude-API by KoushikNavuluri](https://github.com/KoushikNavuluri/Claude-API)** - Inspired the approach for direct Claude.ai web access using cookie authentication
+
+### Built With
+
+- [Claude Code](https://claude.ai/claude-code) - AI-assisted development
+
+---
+
+**Project Status:** Development
+**Primary Use:** Local MacBook - works with ANY Claude Project
+**Tech Stack:** Python Flask + Anthropic Claude (API + Web Client)
 **Goal:** Universal chat interface for Claude Projects with configuration-driven customization
+
+---
+
+**Note:** This is an unofficial tool and is not affiliated with Anthropic. Use responsibly and in accordance with Anthropic's terms of service.

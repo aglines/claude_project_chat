@@ -1,16 +1,40 @@
 # Claude Project Chat Interface
 
-A universal web-based chat interface for ANY Claude Project via the Anthropic API. Configuration-driven design allows customization without code changes.
+A universal web-based chat interface for ANY Claude Project. Supports both the official Anthropic API and direct Claude.ai web access with cookie authentication.
 
 ## Features
 
+### Core Features
+- **Dual Connection Modes** - Use official API or direct Claude.ai web access
+- **Claude Projects Support** - Access your Claude Projects with their knowledge bases
+- **Project Selector** - Switch between multiple Claude Projects on the fly
 - **Configuration-driven** - Works with any Claude Project by editing YAML config
+- **20+ Built-in Templates** - Analysis, research, content creation, and more
+
+### File & Content
 - **File upload support** - PDF, DOCX, TXT, MD (configurable)
-- **Customizable prompts** - Define your own prompt templates
-- **Conversation history** - Maintains context within sessions
+- **Drag & drop uploads** - Easy file handling
 - **URL content fetching** - Optionally fetch and analyze web content
+
+### UI/UX
+- **Template System** - Dynamic prompt builder with variable inputs
+- **Conversation history** - Maintains context within sessions
+- **New Chat button** - Start fresh conversations within projects
+- **Settings modal** - Manage projects, templates, and connection settings
 - **Responsive design** - Works on desktop and mobile
-- **Drag & drop** - Easy file uploads
+
+## Connection Modes
+
+### Option 1: Claude.ai Web Client (Recommended for Projects)
+
+Connect directly to Claude.ai using your browser session cookie. This gives you access to:
+- Your Claude Projects with their custom instructions and knowledge bases
+- Project-specific conversations
+- All features available in the Claude.ai web interface
+
+### Option 2: Official Anthropic API
+
+Use the standard Anthropic API for direct Claude access without project features.
 
 ## Quick Start
 
@@ -51,20 +75,34 @@ pip install -r requirements.txt
 # Copy example env file
 cp .env.example .env
 
-# Edit .env with your credentials (use any text editor)
+# Edit .env with your credentials
 nano .env  # or: code .env, vim .env, etc.
 ```
 
-Add your credentials to `.env`:
+#### For Claude.ai Web Client (Recommended):
+
+```env
+# Get this from your browser's DevTools (see instructions below)
+CLAUDE_COOKIE=sessionKey=sk-ant-sid01-xxx...
+
+# Optional: Start in a specific conversation
+CLAUDE_CONVERSATION_ID=your-conversation-uuid
 ```
+
+**Getting Your Claude Cookie:**
+1. Open [claude.ai](https://claude.ai) and log in
+2. Open DevTools (F12 or Cmd+Option+I)
+3. Go to Network tab
+4. Click any request to claude.ai
+5. Find the `Cookie` header in Request Headers
+6. Copy the entire cookie string (starts with `sessionKey=`)
+
+#### For Official Anthropic API:
+
+```env
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 CLAUDE_PROJECT_ID=your-project-uuid-here
 ```
-
-**Getting Your Claude Project UUID:**
-1. Open your Claude Project at [claude.ai](https://claude.ai)
-2. Look at the URL: `https://claude.ai/project/{PROJECT_UUID}`
-3. Copy the UUID (e.g., `019b2d71-59d5-707d-9fbe-e419324275e7`)
 
 ### 5. Run the Server
 
@@ -87,25 +125,18 @@ You should see:
 
 Navigate to: **http://127.0.0.1:5000**
 
-### Next Time (Quick Start)
+### 7. Enable Projects (First Time)
 
-```bash
-cd claude_project_chat
-./venv/bin/python app.py
-```
-
-Or with activation:
-```bash
-cd claude_project_chat
-source venv/bin/activate
-python app.py
-```
+1. Click the **Settings** (gear icon) in the header
+2. In "Active Projects", check the projects you want to use
+3. Click **Save Changes**
+4. Use the project dropdown in the header to switch projects
 
 ## Configuration
 
 ### Project Settings (`project_config.yaml`)
 
-Edit this file to customize the interface for your specific Claude Project:
+Edit this file to customize the interface:
 
 ```yaml
 # Project Identity
@@ -131,7 +162,7 @@ files:
   max_size_mb: 10
   max_files: 5
 
-# Custom Prompts
+# Custom Prompts (for Simple Input mode)
 prompts:
   - id: "general_chat"
     label: "General Chat"
@@ -140,13 +171,30 @@ prompts:
     placeholder: "Ask anything..."
 ```
 
-### Switching Projects
+### Custom Templates (`custom_prompts.yaml`)
 
-1. Edit `.env` - Change `CLAUDE_PROJECT_ID`
-2. Edit `project_config.yaml` - Update prompts and settings
-3. Restart the server
+Create your own templates that persist across updates:
 
-No code changes needed.
+```yaml
+templates:
+  - id: my_custom_template
+    name: "My Custom Analysis"
+    description: "Describe what this does"
+    category: analysis
+    template: |
+      Analyze the following for [focus_area]:
+
+      [content]
+    variables:
+      - name: focus_area
+        label: "Focus Area"
+        type: text
+        required: true
+      - name: content
+        label: "Content to Analyze"
+        type: textarea
+        required: true
+```
 
 ## Project Structure
 
@@ -154,22 +202,24 @@ No code changes needed.
 claude_project_chat/
 ├── app.py                   # Flask server with API routes
 ├── config.py                # Configuration loader
-├── project_config.yaml      # Project-specific settings (EDIT THIS)
+├── project_config.yaml      # Project-specific settings
+├── custom_prompts.yaml      # Your custom templates (gitignored)
 ├── requirements.txt         # Python dependencies
-├── .env                     # API keys (EDIT THIS, not in git)
+├── .env                     # API keys/cookies (gitignored)
 ├── .env.example             # Example environment file
-├── .gitignore               # Git ignore patterns
 ├── static/
 │   ├── css/styles.css       # Custom styles
 │   ├── js/
 │   │   ├── app.js           # Main frontend JavaScript
-│   │   └── prompt-builder.js # Template UI component
+│   │   └── prompt-builder.js # Template UI + Project Manager
 │   └── uploads/             # Temporary file storage
 ├── templates/
 │   └── index.html           # Chat interface template
 └── utils/
     ├── __init__.py
-    ├── claude_client.py     # Anthropic API wrapper
+    ├── claude_client.py     # Official Anthropic API wrapper
+    ├── claude_web_client.py # Claude.ai web client (cookie auth)
+    ├── tool_handler.py      # Tool execution handler
     ├── file_processor.py    # File handling
     ├── url_fetcher.py       # URL content fetching
     ├── prompt_templates.py  # 20+ built-in templates
@@ -184,99 +234,70 @@ claude_project_chat/
 | `/api/chat` | POST | Send message to Claude |
 | `/api/upload` | POST | Upload file |
 | `/api/fetch-url` | POST | Fetch URL content |
-| `/api/prompts` | GET | Get available prompts |
+| `/api/templates` | GET | Get all templates |
+| `/api/prompts` | GET | Get legacy prompts |
 | `/api/session/{id}` | GET | Get session history |
 | `/api/session/{id}` | DELETE | Clear session |
 | `/api/config` | GET | Get project config |
+| `/api/client-status` | GET | Check connection mode |
+| `/api/update-cookie` | POST | Update Claude.ai cookie |
+| `/api/projects` | GET | List available projects |
+| `/api/projects/set-active` | POST | Switch active project |
+| `/api/conversations` | GET | List conversations |
+| `/api/conversations/new` | POST | Start new conversation |
 
-## Example Configurations
+## Built-in Template Categories
 
-### Document Analysis
-
-```yaml
-prompts:
-  - id: summarize
-    label: "Summarize Document"
-    template: "Provide a concise summary"
-    requires_files: true
-    min_files: 1
-
-  - id: compare
-    label: "Compare Documents"
-    template: "Compare and contrast these documents"
-    requires_files: true
-    min_files: 2
-```
-
-### Code Review
-
-```yaml
-files:
-  allowed_extensions: [py, js, ts, java, cpp, go]
-
-prompts:
-  - id: review
-    label: "Code Review"
-    template: "Review this code for quality and best practices"
-    requires_files: true
-
-  - id: explain
-    label: "Explain Code"
-    template: "Explain what this code does"
-    requires_files: true
-```
-
-### Research Assistant
-
-```yaml
-features:
-  url_fetching: true
-
-prompts:
-  - id: research
-    label: "Research Topic"
-    template: "Research and summarize: {user_input}"
-    requires_input: true
-
-  - id: analyze_url
-    label: "Analyze Website"
-    template: "Analyze this URL: {url}"
-    requires_url: true
-```
+- **Analysis** - SWOT, competitive, gap analysis
+- **Research** - Literature review, market research, trend analysis
+- **Content** - Blog posts, social media, email campaigns
+- **Technical** - Code review, documentation, architecture
+- **Business** - Business plans, proposals, reports
+- **Creative** - Brainstorming, storytelling, naming
 
 ## Troubleshooting
 
-### "ANTHROPIC_API_KEY is required"
+### Cookie Authentication Issues
+
+**"Access denied (403)"**
+- Your cookie has expired. Get a fresh one from claude.ai DevTools
+- Update via Settings modal or edit `.env` directly
+
+**Projects not showing**
+1. Click Settings (gear icon)
+2. Click "Refresh Projects"
+3. Enable the projects you want
+4. Save Changes
+
+### API Issues
+
+**"ANTHROPIC_API_KEY is required"**
 - Check that `.env` file exists and contains your API key
 - Ensure the key starts with `sk-ant-`
 
-### File upload fails
+### File Upload Issues
+
 - Check file extension is in `allowed_extensions`
 - Verify file size is under `max_size_mb`
-- Ensure `static/uploads/` directory exists and is writable
+- Ensure `static/uploads/` directory exists
 
-### "Module not found" errors
-- Activate virtual environment: `source venv/bin/activate`
-- Install dependencies: `pip install -r requirements.txt`
-
-### Pip installs to wrong Python / "site-packages is not writeable"
-If you see "Defaulting to user installation because normal site-packages is not writeable", your shell has conflicting Python aliases. Use the venv binaries directly:
+### Module Not Found
 
 ```bash
-# Install using venv pip directly
-./venv/bin/pip install --upgrade pip
-./venv/bin/pip install -r requirements.txt
+# Activate virtual environment
+source venv/bin/activate
 
-# Run using venv python directly
-./venv/bin/python app.py
+# Reinstall dependencies
+pip install -r requirements.txt
 ```
 
-Or recreate the venv completely:
+### Pip Installation Issues
+
+If pip installs to wrong location:
 ```bash
-rm -rf venv
-python3 -m venv venv
-./venv/bin/pip install --upgrade pip
+# Use venv binaries directly
 ./venv/bin/pip install -r requirements.txt
+./venv/bin/python app.py
 ```
 
 ## Development
@@ -296,11 +317,38 @@ pytest
 
 ## Security Notes
 
-- API keys are stored in `.env` (not committed to git)
+- API keys and cookies are stored in `.env` (not committed to git)
 - Runs locally on 127.0.0.1 by default
 - Uploaded files are stored temporarily in `static/uploads/`
+- Cookie-based auth uses your Claude.ai session - keep it secure
 - Consider adding authentication for production use
+
+## Credits & Acknowledgments
+
+This project uses and was inspired by several open-source projects:
+
+### Libraries Used
+
+- **[Flask](https://flask.palletsprojects.com/)** - Web framework
+- **[Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python)** - Official Claude API
+- **[curl_cffi](https://github.com/yifeikong/curl_cffi)** - HTTP client with browser impersonation
+- **[BeautifulSoup4](https://www.crummy.com/software/BeautifulSoup/)** - HTML parsing
+- **[PyPDF2](https://github.com/py-pdf/pypdf)** - PDF text extraction
+- **[python-docx](https://github.com/python-openxml/python-docx)** - Word document processing
+- **[Tailwind CSS](https://tailwindcss.com/)** - Utility-first CSS framework
+
+### Inspiration
+
+- **[Claude-API by KoushikNavuluri](https://github.com/KoushikNavuluri/Claude-API)** - Inspired the approach for direct Claude.ai web access using cookie authentication
+
+### Built With
+
+- [Claude Code](https://claude.ai/claude-code) - AI-assisted development
 
 ## License
 
 MIT License - Use freely for your projects.
+
+---
+
+**Note:** This is an unofficial tool and is not affiliated with Anthropic. Use responsibly and in accordance with Anthropic's terms of service.
