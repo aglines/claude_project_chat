@@ -159,6 +159,11 @@ def chat():
         system_context=system_context if system_context else None
     )
 
+    # Get tool stats if available (web client only)
+    tool_stats = None
+    if hasattr(client, 'get_tool_stats'):
+        tool_stats = client.get_tool_stats()
+
     # Update conversation history
     history.append({"role": "user", "content": message})
     history.append({"role": "assistant", "content": response_text})
@@ -166,7 +171,8 @@ def chat():
 
     return jsonify({
         'response': response_text,
-        'session_id': session_id
+        'session_id': session_id,
+        'tool_stats': tool_stats
     })
 
 
@@ -694,7 +700,7 @@ def extract_template_variables():
 
 if __name__ == '__main__':
     print(f"\n{'='*50}")
-    print(f"  {project_config.get('ui.title', 'Claude Chat')}")
+    print(f"  {project_config.get('ui.title', 'Prompt Engineering Workbench')}")
     print(f"  {project_config.get('ui.subtitle', '')}")
     print(f"{'='*50}")
     print(f"\n  Server starting at http://{Config.HOST}:{Config.PORT}")

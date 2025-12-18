@@ -1,4 +1,4 @@
-# Claude Project Chat Interface
+# Prompt Engineering Workbench | Claude Projects
 
 A universal web-based chat interface for ANY Claude Project. Supports both the official Anthropic API and direct Claude.ai web access with cookie authentication.
 
@@ -11,6 +11,12 @@ A universal web-based chat interface for ANY Claude Project. Supports both the o
 - **Configuration-driven** - Works with any Claude Project by editing YAML config
 - **20+ Built-in Templates** - Analysis, research, content creation, and more
 
+### Tool Execution
+- **Web Fetch** - Claude can fetch and analyze web pages automatically
+- **Web Search** - DuckDuckGo (default) or Google Custom Search integration
+- **Progress Tracking** - Visual progress bar with tool execution stats
+- **Real-time Feedback** - See fetches and searches as they happen
+
 ### File & Content
 - **File upload support** - PDF, DOCX, TXT, MD (configurable)
 - **Drag & drop uploads** - Easy file handling
@@ -21,6 +27,7 @@ A universal web-based chat interface for ANY Claude Project. Supports both the o
 - **Conversation history** - Maintains context within sessions
 - **New Chat button** - Start fresh conversations within projects
 - **Settings modal** - Manage projects, templates, and connection settings
+- **Progress indicators** - Animated progress bar during processing
 - **Responsive design** - Works on desktop and mobile
 
 ## Connection Modes
@@ -104,6 +111,18 @@ ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 CLAUDE_PROJECT_ID=your-project-uuid-here
 ```
 
+#### Optional: Google Custom Search (for web search tool)
+
+By default, web search uses DuckDuckGo (no API key needed). For Google Custom Search:
+
+```env
+# Get API key from: https://console.cloud.google.com/apis/credentials
+GOOGLE_SEARCH_API_KEY=your-google-api-key
+
+# Create search engine at: https://programmablesearchengine.google.com/
+GOOGLE_SEARCH_CX=your-search-engine-id
+```
+
 ### 5. Run the Server
 
 ```bash
@@ -113,17 +132,17 @@ python app.py
 You should see:
 ```
 ==================================================
-  Claude Chat
-  Powered by Anthropic
+  Prompt Engineering Workbench | Claude Projects
+
 ==================================================
 
-  Server starting at http://127.0.0.1:5000
+  Server starting at http://127.0.0.1:5001
   Press Ctrl+C to stop
 ```
 
 ### 6. Open in Browser
 
-Navigate to: **http://127.0.0.1:5000**
+Navigate to: **http://127.0.0.1:5001**
 
 ### 7. Enable Projects (First Time)
 
@@ -332,6 +351,7 @@ This project uses and was inspired by several open-source projects:
 - **[Flask](https://flask.palletsprojects.com/)** - Web framework
 - **[Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python)** - Official Claude API
 - **[curl_cffi](https://github.com/yifeikong/curl_cffi)** - HTTP client with browser impersonation
+- **[duckduckgo-search](https://github.com/deedy5/duckduckgo_search)** - Web search without API key
 - **[BeautifulSoup4](https://www.crummy.com/software/BeautifulSoup/)** - HTML parsing
 - **[PyPDF2](https://github.com/py-pdf/pypdf)** - PDF text extraction
 - **[python-docx](https://github.com/python-openxml/python-docx)** - Word document processing

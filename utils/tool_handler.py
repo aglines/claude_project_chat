@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
+from duckduckgo_search import DDGS
 
 
 @dataclass
@@ -58,6 +59,16 @@ class ClaudeToolHandler:
     # Also match incomplete/streaming function calls
     INCOMPLETE_FUNCTION_CALL = re.compile(
         r'<function_calls>\s*<invoke\s+name=["\']([^"\']+)["\']>',
+        re.DOTALL
+    )
+
+    # Pattern to extract from incomplete XML
+    INCOMPLETE_INVOKE_PATTERN = re.compile(
+        r'<invoke\s+name=["\']([^"\']+)["\']>(.*?)(?:</invoke>|$)',
+        re.DOTALL
+    )
+    INCOMPLETE_PARAMETER_PATTERN = re.compile(
+        r'<parameter\s+name=["\']([^"\']+)["\']>([^<]*)',
         re.DOTALL
     )
 
@@ -122,7 +133,7 @@ class ClaudeToolHandler:
         """
         tool_calls = []
 
-        # Find all function_calls blocks
+        # First try complete XML parsing
         for block_match in self.FUNCTION_CALLS_PATTERN.finditer(response_text):
             block_content = block_match.group(1)
             block_xml = block_match.group(0)
@@ -143,6 +154,52 @@ class ClaudeToolHandler:
                     name=tool_name,
                     parameters=parameters,
                     raw_xml=block_xml
+                ))
+
+        # If no complete tool calls found, try parsing incomplete XML
+        if not tool_calls and '<function_calls>' in response_text:
+            tool_calls = self.parse_incomplete_tool_calls(response_text)
+
+        return tool_calls
+
+    def parse_incomplete_tool_calls(self, response_text: str) -> List[ToolCall]:
+        """
+        Parse tool calls from incomplete/truncated XML.
+
+        Args:
+            response_text: The raw response text with potentially incomplete XML
+
+        Returns:
+            List of ToolCall objects extracted from incomplete XML
+        """
+        tool_calls = []
+
+        # Extract everything after <function_calls>
+        fc_start = response_text.find('<function_calls>')
+        if fc_start == -1:
+            return tool_calls
+
+        fc_content = response_text[fc_start:]
+
+        # Find invoke tags (complete or incomplete)
+        for invoke_match in self.INCOMPLETE_INVOKE_PATTERN.finditer(fc_content):
+            tool_name = invoke_match.group(1)
+            invoke_content = invoke_match.group(2)
+
+            # Extract parameters (complete or incomplete)
+            parameters = {}
+            for param_match in self.INCOMPLETE_PARAMETER_PATTERN.finditer(invoke_content):
+                param_name = param_match.group(1)
+                param_value = param_match.group(2).strip()
+                # Clean up any trailing incomplete content
+                if param_value:
+                    parameters[param_name] = param_value
+
+            if tool_name and parameters:
+                tool_calls.append(ToolCall(
+                    name=tool_name,
+                    parameters=parameters,
+                    raw_xml=fc_content
                 ))
 
         return tool_calls
@@ -326,7 +383,7 @@ class ClaudeToolHandler:
 
     def execute_web_search(self, params: Dict[str, str]) -> ToolResult:
         """
-        Search the web.
+        Search the web using DuckDuckGo or Google Custom Search.
 
         Parameters:
             query: The search query
@@ -335,23 +392,104 @@ class ClaudeToolHandler:
         if not query:
             return ToolResult(False, '', 'No search query provided')
 
-        # Check for API key
-        api_key = self.config.get('web_search_api_key')
+        # Check for Google Custom Search API key
+        google_api_key = self.config.get('google_search_api_key')
+        google_cx = self.config.get('google_search_cx')
 
-        if api_key:
-            # Use a search API (e.g., SerpAPI, Bing, etc.)
-            # This is a placeholder - implement based on your chosen API
-            return ToolResult(
-                False, '',
-                'Web search API not implemented. Please configure web_search_api_key.'
-            )
+        if google_api_key and google_cx:
+            # Use Google Custom Search API
+            return self._google_search(query, google_api_key, google_cx)
         else:
-            # Fallback: Return a message that search isn't available
-            return ToolResult(
-                True,
-                f'Web search for "{query}" is not available in this environment. '
-                f'Please try using web_fetch with a specific URL instead.'
-            )
+            # Use DuckDuckGo (no API key needed)
+            return self._duckduckgo_search(query)
+
+    def _duckduckgo_search(self, query: str, max_results: int = 10) -> ToolResult:
+        """
+        Search using DuckDuckGo.
+
+        Args:
+            query: The search query
+            max_results: Maximum number of results to return
+
+        Returns:
+            ToolResult with search results
+        """
+        try:
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=max_results))
+
+            if not results:
+                return ToolResult(
+                    True,
+                    f'No results found for "{query}"'
+                )
+
+            # Format results
+            formatted = [f'Search results for "{query}":\n']
+            for i, result in enumerate(results, 1):
+                title = result.get('title', 'No title')
+                url = result.get('href', result.get('link', ''))
+                snippet = result.get('body', result.get('snippet', ''))
+                formatted.append(f'{i}. {title}')
+                formatted.append(f'   URL: {url}')
+                if snippet:
+                    formatted.append(f'   {snippet}')
+                formatted.append('')
+
+            return ToolResult(True, '\n'.join(formatted))
+
+        except Exception as e:
+            return ToolResult(False, '', f'DuckDuckGo search error: {str(e)}')
+
+    def _google_search(self, query: str, api_key: str, cx: str, max_results: int = 10) -> ToolResult:
+        """
+        Search using Google Custom Search API.
+
+        Args:
+            query: The search query
+            api_key: Google API key
+            cx: Custom Search Engine ID
+            max_results: Maximum number of results to return
+
+        Returns:
+            ToolResult with search results
+        """
+        try:
+            url = 'https://www.googleapis.com/customsearch/v1'
+            params = {
+                'key': api_key,
+                'cx': cx,
+                'q': query,
+                'num': min(max_results, 10)  # Google API max is 10 per request
+            }
+
+            response = requests.get(url, params=params, timeout=self.timeout)
+            response.raise_for_status()
+            data = response.json()
+
+            items = data.get('items', [])
+            if not items:
+                return ToolResult(
+                    True,
+                    f'No results found for "{query}"'
+                )
+
+            # Format results
+            formatted = [f'Search results for "{query}":\n']
+            for i, item in enumerate(items, 1):
+                title = item.get('title', 'No title')
+                url = item.get('link', '')
+                snippet = item.get('snippet', '')
+                formatted.append(f'{i}. {title}')
+                formatted.append(f'   URL: {url}')
+                if snippet:
+                    formatted.append(f'   {snippet}')
+                formatted.append('')
+
+            return ToolResult(True, '\n'.join(formatted))
+
+        except requests.exceptions.RequestException as e:
+            return ToolResult(False, '', f'Google search error: {str(e)}')
 
     def execute_str_replace(self, params: Dict[str, str]) -> ToolResult:
         """

@@ -409,8 +409,13 @@ class ChatInterface {
                 throw new Error(data.error || 'Failed to get response');
             }
 
+            // Show tool stats if available
+            if (data.tool_stats) {
+                this.showToolStats(data.tool_stats);
+            }
+
             // Add assistant response to chat
-            this.addMessage('assistant', data.response);
+            this.addMessage('assistant', data.response, [], null, data.tool_stats);
 
             // Clear template files
             this.templateUploadedFiles = [];
@@ -483,8 +488,13 @@ class ChatInterface {
                 throw new Error(data.error || 'Failed to get response');
             }
 
+            // Show tool stats if available
+            if (data.tool_stats) {
+                this.showToolStats(data.tool_stats);
+            }
+
             // Add assistant response to chat
-            this.addMessage('assistant', data.response);
+            this.addMessage('assistant', data.response, [], null, data.tool_stats);
 
             // Clear input
             if (this.elements.messageInput) {
@@ -508,7 +518,7 @@ class ChatInterface {
     /**
      * Add message to chat history
      */
-    addMessage(role, content, files = [], templateName = null) {
+    addMessage(role, content, files = [], templateName = null, toolStats = null) {
         const isUser = role === 'user';
 
         const messageDiv = document.createElement('div');
@@ -541,6 +551,21 @@ class ChatInterface {
             filesDiv.className = 'text-xs mb-2 opacity-75';
             filesDiv.textContent = `📎 ${files.length} file(s) attached`;
             contentDiv.appendChild(filesDiv);
+        }
+
+        // Add tool stats for assistant messages
+        if (!isUser && toolStats && (toolStats.web_fetch > 0 || toolStats.web_search > 0)) {
+            const statsDiv = document.createElement('div');
+            statsDiv.className = 'text-xs mb-2 text-gray-500 flex gap-3';
+            const parts = [];
+            if (toolStats.web_fetch > 0) {
+                parts.push(`🌐 ${toolStats.web_fetch} page${toolStats.web_fetch > 1 ? 's' : ''} fetched`);
+            }
+            if (toolStats.web_search > 0) {
+                parts.push(`🔍 ${toolStats.web_search} search${toolStats.web_search > 1 ? 'es' : ''}`);
+            }
+            statsDiv.textContent = parts.join(' • ');
+            contentDiv.appendChild(statsDiv);
         }
 
         // Add message content
@@ -721,8 +746,103 @@ class ChatInterface {
 
         if (loading) {
             this.elements.loadingIndicator?.classList.remove('hidden');
+            this.startProgressAnimation();
         } else {
             this.elements.loadingIndicator?.classList.add('hidden');
+            this.stopProgressAnimation();
+        }
+    }
+
+    /**
+     * Start progress bar animation
+     */
+    startProgressAnimation() {
+        const progressBar = document.getElementById('progressBar');
+        const loadingText = document.getElementById('loadingText');
+        const toolProgress = document.getElementById('toolProgress');
+
+        if (progressBar) {
+            progressBar.style.width = '0%';
+        }
+
+        // Reset tool counts
+        this.updateToolCounts(0, 0);
+        toolProgress?.classList.add('hidden');
+
+        // Animate progress bar
+        let progress = 0;
+        const messages = [
+            'Claude is thinking...',
+            'Analyzing your request...',
+            'Processing...',
+            'Gathering information...',
+            'Almost there...'
+        ];
+        let messageIndex = 0;
+
+        this.progressInterval = setInterval(() => {
+            // Slowly increment progress (never reaches 100%)
+            if (progress < 90) {
+                progress += Math.random() * 5;
+                if (progressBar) {
+                    progressBar.style.width = `${Math.min(progress, 90)}%`;
+                }
+            }
+
+            // Cycle through messages
+            messageIndex = (messageIndex + 1) % messages.length;
+            if (loadingText) {
+                loadingText.textContent = messages[messageIndex];
+            }
+        }, 2000);
+    }
+
+    /**
+     * Stop progress bar animation
+     */
+    stopProgressAnimation() {
+        if (this.progressInterval) {
+            clearInterval(this.progressInterval);
+            this.progressInterval = null;
+        }
+
+        const progressBar = document.getElementById('progressBar');
+        if (progressBar) {
+            progressBar.style.width = '100%';
+            setTimeout(() => {
+                progressBar.style.width = '0%';
+            }, 500);
+        }
+    }
+
+    /**
+     * Update tool execution counts in the UI
+     */
+    updateToolCounts(fetches, searches) {
+        const fetchCount = document.getElementById('fetchCount');
+        const searchCount = document.getElementById('searchCount');
+        const toolProgress = document.getElementById('toolProgress');
+
+        if (fetchCount) fetchCount.textContent = `🌐 Fetches: ${fetches}`;
+        if (searchCount) searchCount.textContent = `🔍 Searches: ${searches}`;
+
+        // Show tool progress if any tools were used
+        if ((fetches > 0 || searches > 0) && toolProgress) {
+            toolProgress.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Display tool stats after response
+     */
+    showToolStats(stats) {
+        if (!stats) return;
+
+        const fetches = stats.web_fetch || 0;
+        const searches = stats.web_search || 0;
+
+        if (fetches > 0 || searches > 0) {
+            this.updateToolCounts(fetches, searches);
         }
     }
 

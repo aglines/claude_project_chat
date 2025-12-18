@@ -1169,6 +1169,7 @@ class PromptBuilder {
         document.getElementById('variableForm')?.classList.remove('hidden');
         document.getElementById('previewPanel')?.classList.remove('hidden');
         document.getElementById('submitControls')?.classList.remove('hidden');
+        document.getElementById('templateFileUploadSection')?.classList.remove('hidden');
 
         // Update preview
         this.updatePreview();
@@ -1402,6 +1403,7 @@ class PromptBuilder {
         document.getElementById('variableForm')?.classList.add('hidden');
         document.getElementById('previewPanel')?.classList.add('hidden');
         document.getElementById('submitControls')?.classList.add('hidden');
+        document.getElementById('templateFileUploadSection')?.classList.add('hidden');
 
         // Reset the dropdown button text
         document.getElementById('selectedTemplateName').textContent = 'Select a template...';

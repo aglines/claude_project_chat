@@ -57,12 +57,12 @@ class ProjectConfig:
         """Return default configuration."""
         return {
             'project': {
-                'name': 'Claude Chat',
+                'name': 'Prompt Engineering Workbench',
                 'description': 'Claude Project Chat Interface'
             },
             'ui': {
-                'title': 'Claude Chat',
-                'subtitle': 'Powered by Anthropic',
+                'title': 'Prompt Engineering Workbench | Claude Projects',
+                'subtitle': '',
                 'primary_color': '#3b82f6'
             },
             'features': {

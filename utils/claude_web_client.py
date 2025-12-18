@@ -14,6 +14,8 @@ from typing import List, Optional
 
 from curl_cffi import requests
 
+from utils.tool_handler import ClaudeToolHandler
+
 
 class ClaudeWebClient:
     """
@@ -35,6 +37,22 @@ class ClaudeWebClient:
         self.project_conversation_id = project_conversation_id
         self._conversation_id = None
         self.organization_id = self._get_organization_id()
+
+        # Initialize tool handler for processing tool calls in responses
+        self.tool_handler = ClaudeToolHandler({
+            'allowed_tools': ['web_fetch', 'web_search'],
+            'timeout': 30,
+            # Google Custom Search (optional - falls back to DuckDuckGo if not set)
+            'google_search_api_key': os.environ.get('GOOGLE_SEARCH_API_KEY'),
+            'google_search_cx': os.environ.get('GOOGLE_SEARCH_CX')
+        })
+
+        # Track tool execution stats per request
+        self.tool_stats = {'web_fetch': 0, 'web_search': 0, 'iterations': 0}
+
+    def get_tool_stats(self) -> dict:
+        """Get tool execution stats from the last request."""
+        return self.tool_stats
 
     def _get_headers(self) -> dict:
         """Get common headers for API requests."""
@@ -155,12 +173,15 @@ class ClaudeWebClient:
     def _parse_streaming_chunks(self, response) -> str:
         """Parse streaming SSE response by iterating over lines."""
         completions = []
+        event_count = 0
 
         try:
             # Use iter_lines for SSE parsing - handles line buffering
             for line_bytes in response.iter_lines():
                 if not line_bytes:
                     continue
+
+                event_count += 1
 
                 # Decode bytes to string
                 try:
@@ -186,7 +207,111 @@ class ClaudeWebClient:
             raise ValueError(f"Stream parsing error: {str(e)}")
 
         result = ''.join(completions) if completions else "No response received"
+
+        # Check for incomplete function calls - if we have opening tag but no closing
+        if '<function_calls>' in result and '</function_calls>' not in result:
+            # Try polling the conversation for the complete message
+            for attempt in range(5):
+                time.sleep(2)
+                full_msg = self._get_last_message()
+                if full_msg and '</function_calls>' in full_msg:
+                    result = full_msg
+                    break
+                elif full_msg and len(full_msg) > len(result):
+                    result = full_msg
+
+        # Track tool execution stats
+        self.tool_stats = {'web_fetch': 0, 'web_search': 0, 'iterations': 0}
+
+        # Check for tool calls and handle them
+        if self.tool_handler.has_tool_calls(result):
+            result = self._handle_tool_calls(result)
+
         return result
+
+    def _handle_tool_calls(self, response: str, max_iterations: int = 5) -> str:
+        """
+        Handle tool calls in Claude's response.
+
+        Executes tools and sends results back until a final response is received.
+        """
+        accumulated_text = []
+        current_response = response
+        iterations = 0
+
+        while iterations < max_iterations:
+            iterations += 1
+            self.tool_stats['iterations'] = iterations
+
+            # Extract text before tool calls
+            text_before = self.tool_handler.get_text_before_tools(current_response)
+            if text_before:
+                accumulated_text.append(text_before)
+
+            # Parse and execute tools
+            tool_calls = self.tool_handler.parse_tool_calls(current_response)
+
+            if not tool_calls:
+                # No more tool calls - get final cleaned response
+                final_text = self.tool_handler.clean_response(current_response)
+                if final_text and final_text not in accumulated_text:
+                    accumulated_text.append(final_text)
+                break
+
+            # Track tool usage stats
+            for tc in tool_calls:
+                if tc.name in self.tool_stats:
+                    self.tool_stats[tc.name] += 1
+
+            # Execute all tools
+            results = self.tool_handler.execute_all_tools(tool_calls)
+            formatted_results = self.tool_handler.format_tool_results(results)
+
+            # Send tool results back to Claude
+            try:
+                current_response = self._send_tool_results(formatted_results)
+
+                # Check if new response has more tool calls
+                if not self.tool_handler.has_tool_calls(current_response):
+                    final_text = self.tool_handler.clean_response(current_response)
+                    if final_text:
+                        accumulated_text.append(final_text)
+                    break
+
+            except Exception as e:
+                accumulated_text.append(f"\n[Tool execution error: {str(e)}]")
+                break
+
+        return '\n\n'.join(filter(None, accumulated_text))
+
+    def _send_tool_results(self, results: str, timeout: int = 300) -> str:
+        """Send tool execution results back to Claude."""
+        conversation_id = self._get_or_create_conversation()
+        url = f"https://claude.ai/api/organizations/{self.organization_id}/chat_conversations/{conversation_id}/completion"
+
+        payload = {
+            "prompt": results,
+            "timezone": "America/Los_Angeles",
+            "attachments": [],
+            "files": []
+        }
+
+        headers = self._get_headers()
+        headers['Accept'] = 'text/event-stream'
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            impersonate="chrome120",
+            timeout=timeout,
+            stream=True
+        )
+
+        if response.status_code != 200:
+            raise ValueError(f"API error: {response.status_code}")
+
+        return self._parse_streaming_chunks(response)
 
     def _get_last_message(self) -> Optional[str]:
         """Get the last assistant message from the current conversation."""

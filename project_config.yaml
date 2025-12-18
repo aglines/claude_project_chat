@@ -6,8 +6,8 @@ project:
 
 # UI Customization
 ui:
-  title: "Claude Chat"
-  subtitle: "Powered by Anthropic"
+  title: "Prompt Engineering Workbench | Claude Projects"
+  subtitle: ""
   primary_color: "#3b82f6"
   show_logo: false
   logo_path: ""
