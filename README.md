@@ -95,7 +95,23 @@ git clone https://github.com/SEMalytics/claude_project_chat.git
 cd claude_project_chat
 ```
 
-### 2. Create Virtual Environment
+### 2. Run Setup (Recommended)
+
+The easiest way to get started:
+
+```bash
+./setup.sh
+```
+
+This script will:
+- Check Python version (requires 3.9+)
+- Create a fresh virtual environment
+- Install all dependencies
+- Create `.env` from `.env.example` if needed
+
+### 3. Manual Setup (Alternative)
+
+If you prefer to set up manually:
 
 ```bash
 # Remove any existing venv (if reinstalling)
@@ -104,20 +120,12 @@ rm -rf venv
 # Create fresh virtual environment
 python3 -m venv venv
 
-# Activate it
-source venv/bin/activate  # macOS/Linux
-# OR: venv\Scripts\activate  # Windows
+# Install dependencies using venv's pip directly
+./venv/bin/pip install --upgrade pip
+./venv/bin/pip install -r requirements.txt
 ```
 
-### 3. Install Dependencies
-
-```bash
-# Upgrade pip first
-pip install --upgrade pip
-
-# Install all dependencies
-pip install -r requirements.txt
-```
+> **Important:** Always use `./venv/bin/pip` and `./venv/bin/python` to ensure you're using the virtual environment's Python, not your system Python.
 
 ### 4. Configure Environment
 
@@ -169,6 +177,11 @@ GOOGLE_SEARCH_CX=your-search-engine-id
 ### 5. Run the Server
 
 ```bash
+# Using venv python directly (recommended)
+./venv/bin/python app.py
+
+# OR activate venv first, then run
+source venv/bin/activate  # macOS/Linux
 python app.py
 ```
 
